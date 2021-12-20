@@ -76,6 +76,7 @@ mod options;
 mod parse;
 mod stats;
 mod writer;
+mod cache;
 
 use crate::{
     options::{Config, Format, LycheeOptions},

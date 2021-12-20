@@ -1,14 +1,17 @@
-use serde::{Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::hash::Hash;
 use std::{convert::Infallible, path::PathBuf};
+use std::{io, sync::Arc};
 use thiserror::Error;
 
 use super::InputContent;
 use crate::Uri;
 
-/// Kinds of status errors.
-#[derive(Error, Debug)]
+/// Errors encountered when using the library
+// Some external types don't implement `Serialize` so they were attributed with
+// `#[serde(skip)]`
+#[derive(Error, Debug, Serialize, Deserialize, Clone)]
 #[non_exhaustive]
 pub enum ErrorKind {
     // TODO: maybe needs to be split; currently first element is `Some` only for
@@ -18,19 +21,24 @@ pub enum ErrorKind {
         Some(p) => p.to_str().unwrap_or("<MALFORMED PATH>"),
         None => "<MALFORMED PATH>",
     })]
-    IoError(Option<PathBuf>, std::io::Error),
+    #[serde(skip)]
+    IoError(Option<PathBuf>, Arc<io::Error>),
     /// Errors which can occur when attempting to interpret a sequence of u8 as a string
     #[error("Attempted to interpret an invalid sequence of bytes as a string")]
+    #[serde(skip)]
     Utf8Error(#[from] std::str::Utf8Error),
     /// Reqwest network error
     #[error("Network error while trying to connect to an endpoint via reqwest")]
-    ReqwestError(#[from] reqwest::Error),
+    #[serde(skip)]
+    HttpClientError(#[from] Arc<reqwest::Error>),
     /// Hubcaps network error
     #[error("Network error when trying to connect to an endpoint via hubcaps")]
-    HubcapsError(#[from] hubcaps::Error),
+    #[serde(skip)]
+    GithubError(#[from] Arc<hubcaps::Error>),
     /// The given string can not be parsed into a valid URL, e-mail address, or file path
     #[error("Cannot parse {0} as website url / file path or mail address: ({1:?})")]
-    UrlParseError(String, (url::ParseError, Option<fast_chemail::ParseError>)),
+    #[serde(skip)]
+    UrlParseError(String, (url::ParseError, Option<Arc<fast_chemail::ParseError>>)),
     /// The given URI cannot be converted to a file path
     #[error("Cannot find file {0}")]
     InvalidFilePath(Uri),
@@ -44,7 +52,8 @@ pub enum ErrorKind {
     /// A possible error when converting a `HeaderValue` from a string or byte
     /// slice.
     #[error("Header could not be parsed.")]
-    InvalidHeader(#[from] http::header::InvalidHeaderValue),
+    #[serde(skip)]
+    InvalidHeader(#[from] Arc<http::header::InvalidHeaderValue>),
     /// The given string can not be parsed into a valid base URL or base directory
     #[error("Error with base dir `{0}` : {1}")]
     InvalidBase(String, String),
@@ -53,10 +62,12 @@ pub enum ErrorKind {
     FileNotFound(PathBuf),
     /// Error while traversing an input directory
     #[error("Cannot traverse input directory")]
-    DirTraversal(#[from] jwalk::Error),
+    #[serde(skip)]
+    DirTraversal(#[from] Arc<jwalk::Error>),
     /// The given glob pattern is not valid
     #[error("UNIX glob pattern is invalid")]
-    InvalidGlobPattern(#[from] glob::PatternError),
+    #[serde(skip)]
+    InvalidGlobPattern(#[from] Arc<glob::PatternError>),
     /// The Github API could not be called because of a missing Github token.
     #[error("GitHub token not specified. To check GitHub links reliably, use `--github-token` flag / `GITHUB_TOKEN` env var.")]
     MissingGitHubToken,
@@ -65,7 +76,8 @@ pub enum ErrorKind {
     InsecureURL(Uri),
     /// Error while sending/receiving messages from MPSC channel
     #[error("Cannot send/receive message from channel")]
-    ChannelError(#[from] tokio::sync::mpsc::error::SendError<InputContent>),
+    #[serde(skip)]
+    ChannelError(#[from] Arc<tokio::sync::mpsc::error::SendError<InputContent>>),
     /// An URL with an invalid host was found
     #[error("URL is missing a host")]
     InvalidUrlHost,
@@ -78,8 +90,8 @@ impl PartialEq for ErrorKind {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::IoError(p1, e1), Self::IoError(p2, e2)) => p1 == p2 && e1.kind() == e2.kind(),
-            (Self::ReqwestError(e1), Self::ReqwestError(e2)) => e1.to_string() == e2.to_string(),
-            (Self::HubcapsError(e1), Self::HubcapsError(e2)) => e1.to_string() == e2.to_string(),
+            (Self::HttpClientError(e1), Self::HttpClientError(e2)) => e1.to_string() == e2.to_string(),
+            (Self::GithubError(e1), Self::GithubError(e2)) => e1.to_string() == e2.to_string(),
             (Self::UrlParseError(s1, e1), Self::UrlParseError(s2, e2)) => s1 == s2 && e1 == e2,
             (Self::UnreachableEmailAddress(u1), Self::UnreachableEmailAddress(u2))
             | (Self::InsecureURL(u1), Self::InsecureURL(u2)) => u1 == u2,
@@ -102,8 +114,8 @@ impl Hash for ErrorKind {
     {
         match self {
             Self::IoError(p, e) => (p, e.kind()).hash(state),
-            Self::ReqwestError(e) => e.to_string().hash(state),
-            Self::HubcapsError(e) => e.to_string().hash(state),
+            Self::HttpClientError(e) => e.to_string().hash(state),
+            Self::GithubError(e) => e.to_string().hash(state),
             Self::DirTraversal(e) => e.to_string().hash(state),
             Self::FileNotFound(e) => e.to_string_lossy().hash(state),
             Self::UrlParseError(s, e) => (s, e.type_id()).hash(state),
@@ -124,30 +136,30 @@ impl Hash for ErrorKind {
     }
 }
 
-impl Serialize for ErrorKind {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.collect_str(self)
-    }
-}
+// impl Serialize for ErrorKind {
+//     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+//     where
+//         S: Serializer,
+//     {
+//         serializer.collect_str(self)
+//     }
+// }
 
 impl From<(PathBuf, std::io::Error)> for ErrorKind {
     fn from(value: (PathBuf, std::io::Error)) -> Self {
-        Self::IoError(Some(value.0), value.1)
+        Self::IoError(Some(value.0), Arc::new(value.1))
     }
 }
 
 impl From<std::io::Error> for ErrorKind {
     fn from(e: std::io::Error) -> Self {
-        Self::IoError(None, e)
+        Self::IoError(None, Arc::new(e))
     }
 }
 
 impl From<tokio::task::JoinError> for ErrorKind {
     fn from(e: tokio::task::JoinError) -> Self {
-        Self::IoError(None, e.into())
+        Self::IoError(None, Arc::new(e.into()))
     }
 }
 
@@ -165,7 +177,7 @@ impl From<(String, url::ParseError)> for ErrorKind {
 
 impl From<(String, url::ParseError, fast_chemail::ParseError)> for ErrorKind {
     fn from(value: (String, url::ParseError, fast_chemail::ParseError)) -> Self {
-        Self::UrlParseError(value.0, (value.1, Some(value.2)))
+        Self::UrlParseError(value.0, (value.1, Some(Arc::new(value.2))))
     }
 }
 

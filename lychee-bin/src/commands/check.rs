@@ -1,10 +1,15 @@
+use std::borrow::BorrowMut;
+use std::sync::Arc;
+
 use indicatif::ProgressBar;
 use indicatif::ProgressStyle;
 use lychee_lib::Result;
 use tokio::sync::mpsc;
+use tokio::sync::Mutex;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
 
+use crate::cache::Cache;
 use crate::{
     options::Config,
     stats::{color_response, ResponseStats},
@@ -24,6 +29,7 @@ where
     let (send_resp, mut recv_resp) = mpsc::channel(cfg.max_concurrency);
     let max_concurrency = cfg.max_concurrency;
     let mut stats = ResponseStats::new();
+    let cache = Arc::new(Mutex::new(Cache::new()));
 
     // Start receiving requests
     tokio::spawn(async move {
@@ -36,7 +42,17 @@ where
                 // See https://github.com/servo/rust-url/issues/554
                 // See https://github.com/seanmonstar/reqwest/issues/668
                 // TODO: Handle error as soon as https://github.com/seanmonstar/reqwest/pull/1399 got merged
-                let response = client.check(request).await.expect("cannot check URI");
+
+                let uri = request.uri.clone();
+                let response = match cache.lock().await.get(&uri) {
+                    Some(status) => Response::new(uri.clone(), status.clone(), request.source),
+                    None => client.check(request).await.expect("cannot check URI"),
+                };
+                cache
+                    .lock()
+                    .await
+                    .borrow_mut()
+                    .set(uri, response.status().to_owned());
 
                 send_resp
                     .send(response)

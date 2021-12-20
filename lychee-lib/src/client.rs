@@ -4,7 +4,7 @@
     clippy::default_trait_access,
     clippy::used_underscore_binding
 )]
-use std::{collections::HashSet, time::Duration};
+use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use check_if_email_exists::{check_email, CheckEmailInput, Reachable};
 use http::{
@@ -135,7 +135,11 @@ impl ClientBuilder {
     /// - The Github client cannot be created
     pub fn client(&self) -> Result<Client> {
         let mut headers = self.custom_headers.clone();
-        headers.insert(header::USER_AGENT, HeaderValue::from_str(&self.user_agent)?);
+        headers.insert(
+            header::USER_AGENT,
+            HeaderValue::from_str(&self.user_agent)
+                .map_err(|e| ErrorKind::InvalidHeader(Arc::new(e)))?,
+        );
         headers.insert(
             header::TRANSFER_ENCODING,
             HeaderValue::from_static("chunked"),
@@ -151,13 +155,14 @@ impl ClientBuilder {
             Some(t) => builder.timeout(t),
             None => builder,
         })
-        .build()?;
+        .build()
+        .map_err(|e| ErrorKind::HttpClientError(Arc::new(e)))?;
 
         let github_token = match self.github_token {
-            Some(ref token) if !token.is_empty() => Some(Github::new(
-                self.user_agent.clone(),
-                Credentials::Token(token.clone()),
-            )?),
+            Some(ref token) if !token.is_empty() => Some(
+                Github::new(self.user_agent.clone(), Credentials::Token(token.clone()))
+                    .map_err(|e| ErrorKind::GithubError(Arc::new(e)))?,
+            ),
             _ => None,
         };
 

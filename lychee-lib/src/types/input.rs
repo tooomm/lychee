@@ -1,5 +1,5 @@
 use crate::types::FileType;
-use crate::Result;
+use crate::{ErrorKind, Result};
 use async_stream::try_stream;
 use futures::stream::Stream;
 use glob::glob_with;
@@ -9,6 +9,7 @@ use serde::Serialize;
 use shellexpand::tilde;
 use std::fmt::Display;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use tokio::io::{stdin, AsyncReadExt};
 
 const STDIN: &str = "-";
@@ -62,6 +63,13 @@ pub enum InputSource {
     Stdin,
     /// Raw string input.
     String(String),
+}
+
+// Needed for `#[serde(skip)]` on `Request`
+impl Default for InputSource {
+    fn default() -> Self {
+        InputSource::Stdin
+    }
 }
 
 // Custom serialization for enum is needed
@@ -178,7 +186,8 @@ impl Input {
                                 return valid_extension(&entry.path());
                             });
                         }) {
-                            let entry = entry?;
+                            let entry = entry
+                                .map_err(|e| ErrorKind::DirTraversal(Arc::new(e)))?;
                             if entry.file_type().is_dir() {
                                 continue;
                             }
@@ -214,11 +223,17 @@ impl Input {
             FileType::from(url.as_str())
         };
 
-        let res = reqwest::get(url.clone()).await?;
+        let res = reqwest::get(url.clone())
+            .await
+            .map_err(|e| ErrorKind::HttpClientError(Arc::new(e)))?;
+
         let input_content = InputContent {
             source: InputSource::RemoteUrl(Box::new(url.clone())),
             file_type,
-            content: res.text().await?,
+            content: res
+                .text()
+                .await
+                .map_err(|e| ErrorKind::HttpClientError(Arc::new(e)))?,
         };
 
         Ok(input_content)
@@ -234,7 +249,9 @@ impl Input {
         match_opts.case_sensitive = !ignore_case;
 
         try_stream! {
-            for entry in glob_with(&glob_expanded, match_opts)? {
+            for entry in glob_with(&glob_expanded, match_opts)
+                .map_err(|e| ErrorKind::InvalidGlobPattern(Arc::new(e)))?
+             {
                 match entry {
                     Ok(path) => {
                         // Directories can have a suffix which looks like

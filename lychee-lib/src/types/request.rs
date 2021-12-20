@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use std::{convert::TryFrom, fmt::Display};
 
 use crate::{ErrorKind, Uri};
@@ -5,12 +6,13 @@ use crate::{ErrorKind, Uri};
 use super::InputSource;
 
 /// A request type that can be handle by lychee
-#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
 pub struct Request {
     /// A valid Uniform Resource Identifier of a given endpoint, which can be
     /// checked with lychee
     pub uri: Uri,
     /// The resource which contained the given URI
+    #[serde(skip)]
     pub source: InputSource,
     /// Specifies how the URI was rendered inside a document
     /// (for example `img`, `a`, `pre`, or `code`).

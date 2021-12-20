@@ -1,12 +1,11 @@
+use serde::{Deserialize, Serialize};
 use std::fmt::Display;
-
-use serde::Serialize;
 
 use crate::{InputSource, Status, Uri};
 
 /// Response type returned by lychee after checking a URI
-#[derive(Debug)]
-pub struct Response(pub InputSource, pub ResponseBody);
+#[derive(Debug, Deserialize)]
+pub struct Response(#[serde(skip)] pub InputSource, pub ResponseBody);
 
 impl Response {
     #[inline]
@@ -40,7 +39,7 @@ impl Serialize for Response {
 }
 
 #[allow(clippy::module_name_repetitions)]
-#[derive(Debug, Serialize, Hash, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Hash, PartialEq, Eq)]
 /// Encapsulates the state of a URI check
 pub struct ResponseBody {
     #[serde(flatten)]
