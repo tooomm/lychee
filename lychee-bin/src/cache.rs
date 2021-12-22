@@ -18,17 +18,12 @@ impl Cache {
     /// Look up a potentially cached request
     /// Returns None on cache miss
     pub(crate) fn get(&self, uri: &Uri) -> Option<&Status> {
-        let res = self.inner.get(uri);
-        if res.is_some() {
-            println!("Cache hit!");
-        }
-        res
+        self.inner.get(uri)
     }
 
     /// Look up a potentially cached request
     /// Returns None on cache miss
-    pub(crate) fn set(&mut self, uri: Uri, status: Status) -> Option<Status> {
-        println!("Set {}", uri);
+    pub(crate) fn insert(&mut self, uri: Uri, status: Status) -> Option<Status> {
         self.inner.insert(uri, status)
     }
 }

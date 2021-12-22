@@ -1,11 +1,10 @@
-use std::borrow::BorrowMut;
 use std::sync::Arc;
 
 use indicatif::ProgressBar;
 use indicatif::ProgressStyle;
 use lychee_lib::Result;
 use tokio::sync::mpsc;
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
 
@@ -29,7 +28,8 @@ where
     let (send_resp, mut recv_resp) = mpsc::channel(cfg.max_concurrency);
     let max_concurrency = cfg.max_concurrency;
     let mut stats = ResponseStats::new();
-    let cache = Arc::new(Mutex::new(Cache::new()));
+
+    let cache = Arc::new(RwLock::new(Cache::new()));
 
     // Start receiving requests
     tokio::spawn(async move {
@@ -38,21 +38,27 @@ where
             max_concurrency,
             |request: Result<Request>| async {
                 let request: Request = request.expect("cannot read request");
-                // This can panic. See when the Url could not be parsed as a Uri.
-                // See https://github.com/servo/rust-url/issues/554
-                // See https://github.com/seanmonstar/reqwest/issues/668
-                // TODO: Handle error as soon as https://github.com/seanmonstar/reqwest/pull/1399 got merged
-
                 let uri = request.uri.clone();
-                let response = match cache.lock().await.get(&uri) {
+                let mut modified = false;
+                let response = match cache.read().await.get(&uri) {
                     Some(status) => Response::new(uri.clone(), status.clone(), request.source),
-                    None => client.check(request).await.expect("cannot check URI"),
+                    None => {
+                        // This can panic. See when the Url could not be parsed as a Uri.
+                        // See https://github.com/servo/rust-url/issues/554
+                        // See https://github.com/seanmonstar/reqwest/issues/668
+                        // TODO: Handle error as soon as https://github.com/seanmonstar/reqwest/pull/1399 got merged
+                        let response = client.check(request).await.expect("cannot check URI");
+                        modified = true;
+                        response
+                    }
                 };
-                cache
-                    .lock()
-                    .await
-                    .borrow_mut()
-                    .set(uri, response.status().to_owned());
+
+                if modified {
+                    cache
+                        .write()
+                        .await
+                        .insert(uri, response.status().to_owned());
+                }
 
                 send_resp
                     .send(response)
