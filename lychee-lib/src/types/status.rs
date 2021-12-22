@@ -225,15 +225,15 @@ impl From<reqwest::Error> for Status {
         if e.is_timeout() {
             Self::Timeout(e.status())
         } else if e.is_builder() {
-            Self::Unsupported(Box::new(ErrorKind::HttpClientError(Arc::new(e))))
+            Self::Unsupported(Box::new(ErrorKind::Client(Arc::new(e))))
         } else {
-            Self::Error(Box::new(ErrorKind::HttpClientError(Arc::new(e))))
+            Self::Error(Box::new(ErrorKind::Client(Arc::new(e))))
         }
     }
 }
 
 impl From<hubcaps::Error> for Status {
     fn from(e: hubcaps::Error) -> Self {
-        Self::Error(Box::new(ErrorKind::GithubError(Arc::new(e))))
+        Self::Error(Box::new(ErrorKind::Github(Arc::new(e))))
     }
 }

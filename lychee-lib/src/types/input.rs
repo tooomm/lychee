@@ -225,7 +225,7 @@ impl Input {
 
         let res = reqwest::get(url.clone())
             .await
-            .map_err(|e| ErrorKind::HttpClientError(Arc::new(e)))?;
+            .map_err(|e| ErrorKind::Client(Arc::new(e)))?;
 
         let input_content = InputContent {
             source: InputSource::RemoteUrl(Box::new(url.clone())),
@@ -233,7 +233,7 @@ impl Input {
             content: res
                 .text()
                 .await
-                .map_err(|e| ErrorKind::HttpClientError(Arc::new(e)))?,
+                .map_err(|e| ErrorKind::Client(Arc::new(e)))?,
         };
 
         Ok(input_content)
@@ -250,7 +250,7 @@ impl Input {
 
         try_stream! {
             for entry in glob_with(&glob_expanded, match_opts)
-                .map_err(|e| ErrorKind::InvalidGlobPattern(Arc::new(e)))?
+                .map_err(|e| ErrorKind::Glob(Arc::new(e)))?
              {
                 match entry {
                     Ok(path) => {

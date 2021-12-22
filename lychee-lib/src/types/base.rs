@@ -60,7 +60,7 @@ impl TryFrom<&str> for Base {
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         if let Ok(url) = Url::parse(value) {
             if url.cannot_be_a_base() {
-                return Err(ErrorKind::InvalidBase(
+                return Err(ErrorKind::Base(
                     value.to_string(),
                     "The given URL cannot be a base".to_string(),
                 ));

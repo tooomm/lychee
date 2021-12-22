@@ -94,7 +94,7 @@ fn create_uri_from_path(src: &Path, dst: &str, base: &Option<Base>) -> Result<Op
     match resolved {
         Some(path) => Url::from_file_path(&path)
             .map(Some)
-            .map_err(|_e| ErrorKind::InvalidUrlFromPath(path)),
+            .map_err(|_e| ErrorKind::UrlFromPath(path)),
         None => Ok(None),
     }
 }

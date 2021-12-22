@@ -57,7 +57,7 @@ pub(crate) fn resolve(src: &Path, dst: &Path, base: &Option<Base>) -> Result<Opt
             let dir = match dirname(&base) {
                 Some(dir) => dir,
                 None => {
-                    return Err(ErrorKind::InvalidBase(
+                    return Err(ErrorKind::Base(
                         base.display().to_string(),
                         "The given directory cannot be a base".to_string(),
                     ))

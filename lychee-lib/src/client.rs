@@ -138,7 +138,7 @@ impl ClientBuilder {
         headers.insert(
             header::USER_AGENT,
             HeaderValue::from_str(&self.user_agent)
-                .map_err(|e| ErrorKind::InvalidHeader(Arc::new(e)))?,
+                .map_err(|e| ErrorKind::Header(Arc::new(e)))?,
         );
         headers.insert(
             header::TRANSFER_ENCODING,
@@ -156,12 +156,12 @@ impl ClientBuilder {
             None => builder,
         })
         .build()
-        .map_err(|e| ErrorKind::HttpClientError(Arc::new(e)))?;
+        .map_err(|e| ErrorKind::Client(Arc::new(e)))?;
 
         let github_token = match self.github_token {
             Some(ref token) if !token.is_empty() => Some(
                 Github::new(self.user_agent.clone(), Credentials::Token(token.clone()))
-                    .map_err(|e| ErrorKind::GithubError(Arc::new(e)))?,
+                    .map_err(|e| ErrorKind::Github(Arc::new(e)))?,
             ),
             _ => None,
         };
@@ -296,7 +296,7 @@ impl Client {
                 return Status::Ok(StatusCode::OK);
             }
         }
-        ErrorKind::InvalidFilePath(uri.clone()).into()
+        ErrorKind::FileUriNotFound(uri.clone()).into()
     }
 
     /// Check a mail address
@@ -305,7 +305,7 @@ impl Client {
         let result = &(check_email(&input).await)[0];
 
         if let Reachable::Invalid = result.is_reachable {
-            ErrorKind::UnreachableEmailAddress(uri.clone()).into()
+            ErrorKind::Mail(uri.clone()).into()
         } else {
             Status::Ok(StatusCode::OK)
         }
