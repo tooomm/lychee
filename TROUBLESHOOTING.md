@@ -26,6 +26,23 @@ Instead they might send `204` (No Content), `206` (Partial Content), or
 If you run into such issues you can work around that by providing a custom \
 list of accepted status codes, such as `--accept 200,204,206`.
 
+## Too many open files
+
+Every network
+request maps to an open socket and the default concurrency (`MAX_CONCURRENCY`)
+is set to 128 by default.
+
+If you see error messages like "error trying to connect: tcp open error: Too
+many open files (os error 24)" then you ran out of file handles.
+You have two options:
+
+- Lower the concurrency by setting `--max-concurrency` to something more
+  conservative like 32. This works, but it also comes with a performance
+  penalty.
+- Increase the number of maximum file handles. See instructions
+  [here](https://wilsonmar.github.io/maximum-limits/) or
+  [here](https://synthomat.de/blog/2020/01/increasing-the-file-descriptor-limit-on-macos/).
+
 ## Website Expects Custom Headers
 
 Some sites expect one or more custom headers to return a valid response. \
