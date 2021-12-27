@@ -1,29 +1,44 @@
+use std::{fs, path::Path};
+
+use anyhow::Result;
+use csv;
+use dashmap::DashMap;
 use lychee_lib::{Status, Uri};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
-/// Request cache for faster checking
-#[derive(Serialize, Deserialize)]
-pub(crate) struct Cache {
-    pub(crate) inner: HashMap<Uri, Status>,
+// pub(crate) struct Cache(DashMap<Uri, Status>);
+pub(crate) type Cache = DashMap<Uri, Status>;
+
+pub(crate) trait StoreExt {
+    fn store<T: AsRef<Path>>(&self, path: T) -> Result<()>;
+    fn load<T: AsRef<Path>>(path: T) -> Result<Cache>;
 }
 
-impl Cache {
-    pub(crate) fn new() -> Self {
-        Cache {
-            inner: HashMap::new(),
+#[derive(Debug, Deserialize)]
+struct Record {
+    uri: Uri,
+    status: Status,
+}
+
+impl StoreExt for Cache {
+    fn store<T: AsRef<Path>>(&self, path: T) -> Result<()> {
+        let mut wtr = csv::WriterBuilder::new()
+            .has_headers(false)
+            .from_path(path)?;
+        for result in self {
+            wtr.serialize((result.key(), result.value()))?
         }
+        Ok(())
     }
 
-    /// Look up a potentially cached request
-    /// Returns None on cache miss
-    pub(crate) fn get(&self, uri: &Uri) -> Option<&Status> {
-        self.inner.get(uri)
-    }
-
-    /// Look up a potentially cached request
-    /// Returns None on cache miss
-    pub(crate) fn insert(&mut self, uri: Uri, status: Status) -> Option<Status> {
-        self.inner.insert(uri, status)
+    fn load<T: AsRef<Path>>(path: T) -> Result<Cache> {
+        let map = DashMap::new();
+        let mut rdr = csv::Reader::from_path(path)?;
+        for result in rdr.deserialize() {
+            let (uri, status): (Uri, Status) = result?;
+            println!("uri: {:?}, status: {:?}", uri, status);
+            map.insert(uri, status);
+        }
+        Ok(map)
     }
 }

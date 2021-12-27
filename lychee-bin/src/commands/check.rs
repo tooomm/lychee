@@ -1,14 +1,13 @@
-use std::sync::Arc;
-
 use indicatif::ProgressBar;
 use indicatif::ProgressStyle;
 use lychee_lib::Result;
+use std::sync::Arc;
 use tokio::sync::mpsc;
-use tokio::sync::RwLock;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
 
 use crate::cache::Cache;
+use crate::cache::StoreExt;
 use crate::{
     options::Config,
     stats::{color_response, ResponseStats},
@@ -18,6 +17,7 @@ use lychee_lib::{Client, Request, Response};
 
 pub(crate) async fn check<S>(
     client: Client,
+    cache: Cache,
     requests: S,
     cfg: &Config,
 ) -> Result<(ResponseStats, ExitCode)>
@@ -28,8 +28,8 @@ where
     let (send_resp, mut recv_resp) = mpsc::channel(cfg.max_concurrency);
     let max_concurrency = cfg.max_concurrency;
     let mut stats = ResponseStats::new();
-
-    let cache = Arc::new(RwLock::new(Cache::new()));
+    let cache = Arc::new(cache);
+    let cache_store = cache.clone();
 
     // Start receiving requests
     tokio::spawn(async move {
@@ -37,11 +37,11 @@ where
             ReceiverStream::new(recv_req),
             max_concurrency,
             |request: Result<Request>| async {
-                let request: Request = request.expect("cannot read request");
+                let request = request.expect("cannot read request");
                 let uri = request.uri.clone();
                 let mut modified = false;
-                let response = match cache.read().await.get(&uri) {
-                    Some(status) => Response::new(uri.clone(), status.clone(), request.source),
+                let response = match cache.get(&uri) {
+                    Some(v) => Response::new(uri.clone(), v.clone(), request.source),
                     None => {
                         // This can panic. See when the Url could not be parsed as a Uri.
                         // See https://github.com/servo/rust-url/issues/554
@@ -54,10 +54,7 @@ where
                 };
 
                 if modified {
-                    cache
-                        .write()
-                        .await
-                        .insert(uri, response.status().to_owned());
+                    cache.insert(uri, response.status().clone());
                 }
 
                 send_resp
@@ -117,6 +114,8 @@ where
     if let Some(pb) = &pb {
         pb.finish_and_clear();
     }
+
+    cache_store.store(".lycheecache").expect("can't write cache");
 
     let code = if stats.is_success() {
         ExitCode::Success

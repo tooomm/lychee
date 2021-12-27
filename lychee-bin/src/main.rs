@@ -58,6 +58,7 @@
 #![deny(anonymous_parameters, macro_use_extern_crate, pointer_structural_match)]
 #![deny(missing_docs)]
 
+use cache::Cache;
 use lychee_lib::Collector;
 // required for apple silicon
 use ring as _;
@@ -69,6 +70,7 @@ use std::fs::{self, File};
 use std::io::{BufRead, BufReader};
 use structopt::StructOpt;
 
+mod cache;
 mod client;
 mod color;
 mod commands;
@@ -76,9 +78,9 @@ mod options;
 mod parse;
 mod stats;
 mod writer;
-mod cache;
 
 use crate::{
+    cache::StoreExt,
     options::{Config, Format, LycheeOptions},
     stats::ResponseStats,
     writer::StatsWriter,
@@ -165,7 +167,15 @@ async fn run(opts: &LycheeOptions) -> Result<i32> {
     let exit_code = if opts.config.dump {
         commands::dump(client, requests, opts.config.verbose).await?
     } else {
-        let (stats, code) = commands::check(client, requests, &opts.config).await?;
+        let cache = if opts.config.no_cache {
+            Cache::new()
+        } else if let Ok(cache) = Cache::load(".lycheecache") {
+            println!("loaded cache! {:?}", cache);
+            cache
+        } else {
+            Cache::new()
+        };
+        let (stats, code) = commands::check(client, cache, requests, &opts.config).await?;
         write_stats(stats, &opts.config)?;
         code
     };

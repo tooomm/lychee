@@ -24,15 +24,15 @@ pub enum ErrorKind {
     #[serde(skip)]
     Io(Option<PathBuf>, Arc<io::Error>),
     /// Errors which can occur when attempting to interpret a sequence of u8 as a string
-    #[error("Attempted to interpret an invalid sequence of bytes as a string")]
+    #[error("Attempted to interpret an invalid sequence of bytes as a string: {0}")]
     #[serde(skip)]
     Encoding(#[from] std::str::Utf8Error),
     /// Reqwest network error
-    #[error("Network error while trying to connect to an endpoint")]
+    #[error("Network error while trying to connect to an endpoint: {0}")]
     #[serde(skip)]
     Client(#[from] Arc<reqwest::Error>),
     /// Hubcaps network error
-    #[error("Network error when trying to connect to an endpoint via hubcaps")]
+    #[error("Network error when trying to connect to an endpoint via hubcaps: {0}")]
     #[serde(skip)]
     Github(#[from] Arc<hubcaps::Error>),
     /// The given string can not be parsed into a valid URL, e-mail address, or file path
@@ -57,14 +57,14 @@ pub enum ErrorKind {
     /// The given header could not be parsed.
     /// A possible error when converting a `HeaderValue` from a string or byte
     /// slice.
-    #[error("Header could not be parsed.")]
+    #[error("Header could not be parsed: {0}")]
     #[serde(skip)]
     Header(#[from] Arc<http::header::InvalidHeaderValue>),
     /// The given string can not be parsed into a valid base URL or base directory
     #[error("Error with base dir `{0}` : {1}")]
     Base(String, String),
     /// Error while traversing an input directory
-    #[error("Cannot traverse input directory")]
+    #[error("Cannot traverse input directory: {0}")]
     #[serde(skip)]
     DirTraversal(#[from] Arc<jwalk::Error>),
     /// The given glob pattern is not valid
@@ -78,7 +78,7 @@ pub enum ErrorKind {
     #[error("This URI is available in HTTPS protocol, but HTTP is provided, use '{0}' instead")]
     InsecureURL(Uri),
     /// Error while sending/receiving messages from MPSC channel
-    #[error("Cannot send/receive message from channel")]
+    #[error("Cannot send/receive message from channel: {0}")]
     #[serde(skip)]
     Channel(#[from] Arc<tokio::sync::mpsc::error::SendError<InputContent>>),
     /// An URL with an invalid host was found

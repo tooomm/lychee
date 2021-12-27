@@ -15,3 +15,5 @@ Cargo.lock
 
 # VSCode files
 .vscode
+
+.lycheecache

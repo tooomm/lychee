@@ -125,6 +125,11 @@ pub(crate) struct Config {
     #[serde(default)]
     pub(crate) verbose: bool,
 
+    /// Do not load request cache from disk (if available)
+    #[structopt(long)]
+    #[serde(default)]
+    pub(crate) no_cache: bool,
+
     /// Do not show progress bar.
     /// This is recommended for non-interactive shells (e.g. for continuous integration)
     #[structopt(short, long, verbatim_doc_comment)]
@@ -307,6 +312,7 @@ impl Config {
 
             // Keys with defaults to assign
             verbose: false;
+            no_cache: false;
             no_progress: false;
             max_redirects: MAX_REDIRECTS;
             max_concurrency: MAX_CONCURRENCY;
