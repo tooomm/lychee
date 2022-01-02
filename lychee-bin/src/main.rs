@@ -169,9 +169,9 @@ async fn run(opts: &LycheeOptions) -> Result<i32> {
     } else {
         let cache = if opts.config.no_cache {
             Cache::new()
-        } else if let Ok(cache) = Cache::load(".lycheecache") {
-            println!("loaded cache! {:?}", cache);
-            cache
+        // } else if let Ok(cache) = Cache::load(".lycheecache") {
+        //     println!("loaded cache! {:?}", cache);
+        //     cache
         } else {
             Cache::new()
         };

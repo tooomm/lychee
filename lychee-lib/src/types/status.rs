@@ -1,7 +1,7 @@
 use http::StatusCode;
 use reqwest::Response;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, fmt::Display, sync::Arc};
+use std::{collections::HashSet, fmt::Display};
 
 use crate::ErrorKind;
 
@@ -225,15 +225,21 @@ impl From<reqwest::Error> for Status {
         if e.is_timeout() {
             Self::Timeout(e.status())
         } else if e.is_builder() {
-            Self::Unsupported(Box::new(ErrorKind::Client(Arc::new(e))))
+            Self::Unsupported(Box::new(ErrorKind::Client {
+                err: e.to_string(),
+                status: e.status(),
+            }))
         } else {
-            Self::Error(Box::new(ErrorKind::Client(Arc::new(e))))
+            Self::Error(Box::new(ErrorKind::Client {
+                err: e.to_string(),
+                status: e.status(),
+            }))
         }
     }
 }
 
 impl From<hubcaps::Error> for Status {
     fn from(e: hubcaps::Error) -> Self {
-        Self::Error(Box::new(ErrorKind::Github(Arc::new(e))))
+        Self::Error(Box::new(ErrorKind::Github(e.to_string())))
     }
 }

@@ -40,7 +40,7 @@ where
                 let request = request.expect("cannot read request");
                 let uri = request.uri.clone();
                 let mut modified = false;
-                let response = match cache.get(&uri) {
+                let response = match cache.get(&uri.to_string()) {
                     Some(v) => Response::new(uri.clone(), v.clone(), request.source),
                     None => {
                         // This can panic. See when the Url could not be parsed as a Uri.
@@ -54,7 +54,7 @@ where
                 };
 
                 if modified {
-                    cache.insert(uri, response.status().clone());
+                    cache.insert(uri.to_string(), response.status().clone());
                 }
 
                 send_resp

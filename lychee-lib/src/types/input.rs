@@ -225,15 +225,18 @@ impl Input {
 
         let res = reqwest::get(url.clone())
             .await
-            .map_err(|e| ErrorKind::Client(Arc::new(e)))?;
+            .map_err(|e| ErrorKind::Client {
+                err: e.to_string(),
+                status: e.status(),
+            })?;
 
         let input_content = InputContent {
             source: InputSource::RemoteUrl(Box::new(url.clone())),
             file_type,
-            content: res
-                .text()
-                .await
-                .map_err(|e| ErrorKind::Client(Arc::new(e)))?,
+            content: res.text().await.map_err(|e| ErrorKind::Client {
+                err: e.to_string(),
+                status: e.status(),
+            })?,
         };
 
         Ok(input_content)

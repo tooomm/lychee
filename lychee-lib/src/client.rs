@@ -137,8 +137,7 @@ impl ClientBuilder {
         let mut headers = self.custom_headers.clone();
         headers.insert(
             header::USER_AGENT,
-            HeaderValue::from_str(&self.user_agent)
-                .map_err(|e| ErrorKind::Header(Arc::new(e)))?,
+            HeaderValue::from_str(&self.user_agent).map_err(|e| ErrorKind::Header(Arc::new(e)))?,
         );
         headers.insert(
             header::TRANSFER_ENCODING,
@@ -156,12 +155,15 @@ impl ClientBuilder {
             None => builder,
         })
         .build()
-        .map_err(|e| ErrorKind::Client(Arc::new(e)))?;
+        .map_err(|e| ErrorKind::Client {
+            err: e.to_string(),
+            status: e.status(),
+        })?;
 
         let github_token = match self.github_token {
             Some(ref token) if !token.is_empty() => Some(
                 Github::new(self.user_agent.clone(), Credentials::Token(token.clone()))
-                    .map_err(|e| ErrorKind::Github(Arc::new(e)))?,
+                    .map_err(|e| ErrorKind::Github(e.to_string()))?,
             ),
             _ => None,
         };
