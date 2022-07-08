@@ -15,6 +15,7 @@
 )]
 use http::header::{HeaderMap, HeaderValue};
 use http::StatusCode;
+use std::convert::Infallible;
 use std::{collections::HashSet, time::Duration};
 
 use check_if_email_exists::{check_email, CheckEmailInput, Reachable};
@@ -24,7 +25,7 @@ use reqwest::{header, Url};
 use secrecy::{ExposeSecret, SecretString};
 use tokio::time::sleep;
 use tower::util::BoxService;
-use tower::Service;
+use tower::{service_fn, Service, ServiceBuilder};
 use typed_builder::TypedBuilder;
 
 use crate::{
@@ -252,7 +253,7 @@ impl ClientBuilder {
     /// - The request client cannot be created.
     ///   See [here](https://docs.rs/reqwest/latest/reqwest/struct.ClientBuilder.html#errors).
     /// - The Github client cannot be created.
-    pub fn client(self) -> Result<Client> {
+    pub async fn client(self) -> Result<BoxService<Request, Response, ErrorKind>> {
         let Self {
             github_token,
             remaps,
@@ -281,7 +282,7 @@ impl ClientBuilder {
             .tcp_keepalive(Duration::from_secs(TCP_KEEPALIVE))
             .redirect(reqwest::redirect::Policy::limited(self.max_redirects));
 
-        let client = (match self.timeout {
+        let reqwest_client = (match self.timeout {
             Some(t) => builder.timeout(t),
             None => builder,
         })
@@ -316,51 +317,66 @@ impl ClientBuilder {
 
         let quirks = Quirks::default();
 
-        Ok(Client {
-            client,
-            service: Self::build_client(client.clone()),
+        let client = Client::new(
+            reqwest_client,
             github_client,
             remaps,
             filter,
-            max_retries: self.max_retries,
+            self.max_retries,
             retry_wait_time,
             method,
             accepted,
-            require_https: self.require_https,
+            self.require_https,
             quirks,
-        })
+        )
+        .await;
+
+        let service = Self::build_service(client).await;
+
+        Ok(service)
     }
 
-    pub fn build_client(
-        client: reqwest::Client,
-    ) -> BoxService<reqwest::Request, reqwest::Response, reqwest::Error> {
-        let svc = tower::ServiceBuilder::new()
+    pub(crate) async fn build_service(
+        // client: &'static Client,
+        client: Client,
+    ) -> BoxService<Request, Response, ErrorKind> {
+        let service = ServiceBuilder::new()
             // .rate_limit(100, Duration::new(10, 0)) // 100 requests every 10 seconds
             // .retry(Limit(50))
-            .service(tower::service_fn(move |req| client.execute(req)));
+            .service_fn(move |req| {
+                let client = client.clone();
+                async move {
+                    client.check(req)
+                    // This is the `Service` that will handle the connection.
+                    // `service_fn` is a helper to convert a function that
+                    // returns a Response into a `Service`.
+                    // Ok::<_, Error>(service_fn(move |mut req| client.check(req)))
+                    // client.check(req)
 
-        // let mut req = Request::new(Method::POST, Url::parse("http://httpbin.org/post")?);
-        // *req.body_mut() = Some(Body::from("the exact body that is sent"));
+                    // async move { Ok::<_, Infallible>(service_fn(move |req| client.check(req))) }
 
-        // let res = svc.ready_and().await?.call(req).await?;
-        BoxService::new(svc)
+                    // async move { service_fn(move |req| client.check(req)) }
+                }
+            });
+
+        // let make_service = make_service_fn(move |_| {
+        //     let client = client.clone();
+        //     async move { Ok::<_, Infallible>(service_fn(move |req| proxy(client.clone(), req))) }
+        // });
+
+        BoxService::new(service)
     }
 }
 
 /// Handles incoming requests and returns responses.
 ///
 /// See [`ClientBuilder`] which contains sane defaults for all configuration options.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Client {
     /// HTTP request client.
     ///
     /// [reqwest]: https://docs.rs/reqwest/latest/reqwest/struct.Client.html
-    pub client: reqwest::Client,
-
-    /// Underlying [tower] service that handles the HTTP requests.
-    ///
-    /// [tower]: https://docs.rs/tower/latest/tower/struct.Service.html
-    pub service: BoxService<reqwest::Request, reqwest::Response, reqwest::Error>,
+    reqwest_client: reqwest::Client,
 
     /// Github client.
     github_client: Option<Octocrab>,
@@ -414,6 +430,37 @@ pub struct Client {
 // }
 
 impl Client {
+    /// Create a new client instance
+    ///
+    /// This constructor does not get publicly exposed because it is not
+    /// intended to be used directly. Instead, use the [`ClientBuilder`] to
+    /// create a client.
+    pub(self) async fn new(
+        reqwest_client: reqwest::Client,
+        github_client: Option<Octocrab>,
+        remaps: Option<Remaps>,
+        filter: Filter,
+        max_retries: u64,
+        retry_wait_time: Duration,
+        method: http::Method,
+        accepted: Option<HashSet<StatusCode>>,
+        require_https: bool,
+        quirks: Quirks,
+    ) -> Self {
+        Self {
+            reqwest_client,
+            github_client,
+            remaps,
+            filter,
+            max_retries,
+            retry_wait_time,
+            method,
+            accepted,
+            require_https,
+            quirks,
+        }
+    }
+
     /// Check a single request
     ///
     /// # Errors
@@ -561,7 +608,7 @@ impl Client {
     /// Check a URI using [reqwest](https://github.com/seanmonstar/reqwest).
     async fn check_default(&self, uri: &Uri) -> Status {
         let request = match self
-            .client
+            .reqwest_client
             .request(self.method.clone(), uri.as_str())
             .build()
         {
@@ -571,7 +618,7 @@ impl Client {
 
         let request = self.quirks.apply(request);
 
-        match self.client.execute(request).await {
+        match self.reqwest_client.execute(request).await {
             Ok(ref response) => Status::new(response, self.accepted.clone()),
             Err(e) => e.into(),
         }
@@ -625,9 +672,9 @@ where
     Request: TryFrom<T, Error = E>,
     ErrorKind: From<E>,
 {
-    let mut client = ClientBuilder::builder().build().client()?;
+    let mut client = ClientBuilder::builder().build().client().await?;
     let request: Request = request.try_into()?;
-    client.service.call(request.into()).await
+    client.call(request.into()).await
 }
 
 #[cfg(test)]
@@ -724,6 +771,7 @@ mod tests {
             .allow_insecure(true)
             .build()
             .client()
+            .await
             .unwrap()
             .call("https://expired.badssl.com/")
             .await
